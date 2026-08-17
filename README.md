@@ -27,7 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/realChriss/linux-shell-setup/main/m
 ![zoxide](https://img.shields.io/badge/zoxide-z_%26_zi-3B6EA5?style=flat-square&logo=gnometerminal&logoColor=white)
 <br>
 ![Docker](https://img.shields.io/badge/Docker-Engine_%2B_Compose-2496ED?style=flat-square&logo=docker&logoColor=white)
-![Bun](https://img.shields.io/badge/Bun-in_your_.zshrc-14151A?style=flat-square&logo=bun&logoColor=FBF0DF)
+![Bun](https://img.shields.io/badge/Bun-JS_runtime-14151A?style=flat-square&logo=bun&logoColor=FBF0DF)
 <br>
 ![btop](https://img.shields.io/badge/btop-system_monitor-8E44AD?style=flat-square&logo=linux&logoColor=white)
 ![dtop](https://img.shields.io/badge/dtop-docker_metrics-2496ED?style=flat-square&logo=rust&logoColor=white)
