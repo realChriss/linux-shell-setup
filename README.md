@@ -2,7 +2,7 @@
 
 # 🐧 Vps Setup
 
-<div align="center"><h4><b>Chriss'</b> personalized VPS setup 😈</h4></div>
+<div align="center"><h4>Chriss' personalized VPS setup 😈</h4></div>
 
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 ![Debian](https://img.shields.io/badge/Debian-A81D33?style=for-the-badge&logo=debian&logoColor=white)
