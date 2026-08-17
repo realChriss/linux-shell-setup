@@ -1,6 +1,6 @@
 # setup-vps.sh
 
-One-shot bootstrap for a fresh **Ubuntu or Debian** VPS. Run it as root, answer four
+One-shot bootstrap for a fresh **Ubuntu or Debian** VPS. Run it as root, answer the
 questions, walk away. Safe to re-run.
 
 ```sh
@@ -8,21 +8,27 @@ questions, walk away. Safe to re-run.
 curl -fsSL https://raw.githubusercontent.com/realChriss/linux-shell-setup/main/setup-vps.sh | bash
 ```
 
-The prompts still work when piped — the script reads your answers from `/dev/tty`, not
-from stdin. Pass flags after `-s --`:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/realChriss/linux-shell-setup/main/setup-vps.sh | bash -s -- --yes --hostname=web-01
-```
+No flags, no options — the script asks everything up front, shows you the plan, and
+waits for a final confirmation before it touches anything. The prompts still work when
+piped, because it reads your answers from `/dev/tty`, not from stdin.
 
 It must be `bash`, not `sh` — the script uses bash-only features.
+
+## What it asks
+
+1. Hostname (enter keeps the current one)
+2. Remove snap, telemetry and Ubuntu Pro / MOTD ads — Ubuntu only, see below
+3. Install zoxide
+4. Install Docker + Compose
+5. Install Bun
+6. Proceed?
 
 ## What it does
 
 | Step | Notes |
 | --- | --- |
 | System upgrade | `apt-get dist-upgrade`, non-interactive, keeps your existing config files |
-| **De-bloat** (Ubuntu only) | see below |
+| **De-bloat** (Ubuntu only) | optional; see below |
 | Zsh + Oh My Zsh | for root, with `git`, `docker`, `docker-compose`, `zsh-autosuggestions`, `zsh-syntax-highlighting` |
 | zoxide | optional; upstream installer into `~/.local/bin`, wired into `.zshrc` — `z <dir>` to jump, `zi` to pick |
 | Docker + Compose | optional; official Docker repo, `docker-ce` + `docker-compose-plugin` (`docker compose`) |
@@ -53,25 +59,6 @@ Everything is logged to `/var/log/vps-setup-<timestamp>.log`.
 network config and SSH key injection on Hetzner, DigitalOcean and Vultr.
 
 Debian skips this whole section.
-
-## Options
-
-```
---hostname=NAME   set this hostname instead of asking
---keep-hostname   leave the hostname untouched
---docker | --no-docker
---bun    | --no-bun
---zoxide | --no-zoxide
---no-debloat      keep snap / telemetry / Pro & MOTD ads
--y, --yes         never prompt; defaults are: keep hostname, install Docker, Bun and zoxide
--h, --help
-```
-
-Any question you answer with a flag isn't asked. Fully unattended, e.g. from cloud-init:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/realChriss/linux-shell-setup/main/setup-vps.sh | bash -s -- --yes --hostname=web-01 --docker --no-bun
-```
 
 ## After it finishes
 

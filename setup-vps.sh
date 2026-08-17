@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # setup-vps.sh — fresh Ubuntu/Debian VPS bootstrap. Run as root. Safe to re-run.
-# See README.md, or ./setup-vps.sh --help
+# Takes no arguments; it asks what to do. See README.md.
 #
 
 set -Eeuo pipefail
@@ -23,13 +23,8 @@ dbus cloud-init netplan.io ifupdown rsyslog cron apt dpkg bash coreutils util-li
 login passwd e2fsprogs initramfs-tools grub-common grub-pc grub-efi-amd64 grub2-common \
 iproute2 iputils-ping ca-certificates curl git zsh unzip tar"
 
-ASSUME_YES=false
 DO_DEBLOAT=true
 NEW_HOSTNAME=""
-WANT_HOSTNAME=""
-WANT_DOCKER=""
-WANT_BUN=""
-WANT_ZOXIDE=""
 
 WARNINGS=()
 LOG=""
@@ -56,49 +51,21 @@ on_error() {
 }
 trap 'on_error $? $LINENO' ERR
 
-usage() {
-    cat <<'EOF'
-setup-vps.sh — bootstrap a fresh Ubuntu/Debian VPS (run as root)
-
-Options:
-  --hostname=NAME   set this hostname instead of asking
-  --keep-hostname   leave the hostname untouched
-  --docker          install Docker + Compose plugin (skip the question)
-  --no-docker       do not install Docker
-  --bun             install Bun (skip the question)
-  --no-bun          do not install Bun
-  --zoxide          install zoxide (skip the question)
-  --no-zoxide       do not install zoxide
-  --no-debloat      keep snap / Ubuntu telemetry / Pro & MOTD ads
-  -y, --yes         never prompt; use defaults for anything not passed as a flag
-                    (defaults: keep hostname, install Docker, Bun and zoxide)
-  -h, --help        show this help
-
-Always done: system upgrade, zsh + Oh My Zsh (+ autosuggestions, syntax
-highlighting, git/docker/docker-compose plugins), zsh as root's login shell,
-apt cleanup. On Ubuntu, snap and the telemetry/ad packages are removed unless
---no-debloat is given.
-EOF
-}
-
 # Reads from /dev/tty so `curl … | bash` still gets answers from the keyboard.
 ask() {
     local prompt="$1" default="$2" reply=""
-    if [[ "$ASSUME_YES" == true ]]; then
-        printf '%s\n' "$default"; return 0
-    fi
     if [[ -r /dev/tty ]]; then
         read -r -p "$prompt" reply < /dev/tty || reply=""
     elif [[ -t 0 ]]; then
         read -r -p "$prompt" reply || reply=""
     else
-        printf '%s\n' "$default"; return 0
+        die "no terminal to ask on — run this script from an interactive shell"
     fi
     printf '%s\n' "${reply:-$default}"
 }
 
 confirm() {
-    local prompt="$1" default="${2:-y}" hint="[Y/n]" answer
+    local prompt="$1" default="${2:-y}" hint="[Y/n]" answer=""
     [[ "${default,,}" == "n" ]] && hint="[y/N]"
     while true; do
         answer="$(ask "$prompt $hint " "$default")"
@@ -175,31 +142,6 @@ as_root_home() {
     env HOME=/root USER=root LOGNAME=root SHELL=/bin/bash "$@"
 }
 
-parse_args() {
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --hostname=*)    WANT_HOSTNAME="${1#*=}" ;;
-            --hostname)      shift; [[ $# -gt 0 ]] || die "--hostname needs a value"; WANT_HOSTNAME="$1" ;;
-            --keep-hostname) WANT_HOSTNAME="keep" ;;
-            --docker)        WANT_DOCKER=true ;;
-            --no-docker)     WANT_DOCKER=false ;;
-            --bun)           WANT_BUN=true ;;
-            --no-bun)        WANT_BUN=false ;;
-            --zoxide)        WANT_ZOXIDE=true ;;
-            --no-zoxide)     WANT_ZOXIDE=false ;;
-            --no-debloat)    DO_DEBLOAT=false ;;
-            -y|--yes)        ASSUME_YES=true ;;
-            -h|--help)       usage; exit 0 ;;
-            *)               usage >&2; die "unknown option: $1" ;;
-        esac
-        shift
-    done
-
-    if [[ -n "$WANT_HOSTNAME" && "$WANT_HOSTNAME" != "keep" ]]; then
-        valid_hostname "$WANT_HOSTNAME" || die "invalid hostname: $WANT_HOSTNAME"
-    fi
-}
-
 detect_distro() {
     [[ $EUID -eq 0 ]] || die "run this as root (sudo -i, then ./setup-vps.sh)"
     [[ -r /etc/os-release ]] || die "/etc/os-release not found — unsupported system"
@@ -235,54 +177,26 @@ gather_answers() {
 
     printf 'Detected: %s\n' "$DISTRO_NAME"
 
-    if [[ "$WANT_HOSTNAME" == "keep" ]]; then
-        NEW_HOSTNAME=""
-    elif [[ -n "$WANT_HOSTNAME" ]]; then
-        NEW_HOSTNAME="$WANT_HOSTNAME"
-    elif [[ "$ASSUME_YES" == true ]]; then
-        NEW_HOSTNAME=""
+    while true; do
+        answer="$(ask "Hostname [$current] (enter to keep): " "$current")"
+        if [[ "$answer" == "$current" ]]; then
+            NEW_HOSTNAME=""; break
+        elif valid_hostname "$answer"; then
+            NEW_HOSTNAME="$answer"; break
+        else
+            printf '    invalid hostname — letters, digits, hyphens and dots only\n' >&2
+        fi
+    done
+
+    if [[ "$IS_UBUNTU" == true ]]; then
+        confirm "Remove snap, telemetry and Ubuntu Pro/MOTD ads?" y && DO_DEBLOAT=true || DO_DEBLOAT=false
     else
-        while true; do
-            answer="$(ask "Hostname [$current] (enter to keep): " "$current")"
-            if [[ "$answer" == "$current" ]]; then
-                NEW_HOSTNAME=""; break
-            elif valid_hostname "$answer"; then
-                NEW_HOSTNAME="$answer"; break
-            else
-                printf '    invalid hostname — letters, digits, hyphens and dots only\n' >&2
-            fi
-        done
+        DO_DEBLOAT=false
     fi
 
-    if [[ -n "$WANT_DOCKER" ]]; then
-        INSTALL_DOCKER="$WANT_DOCKER"
-    elif [[ "$ASSUME_YES" == true ]]; then
-        INSTALL_DOCKER=true
-    elif confirm "Install Docker + Compose plugin?" y; then
-        INSTALL_DOCKER=true
-    else
-        INSTALL_DOCKER=false
-    fi
-
-    if [[ -n "$WANT_BUN" ]]; then
-        INSTALL_BUN="$WANT_BUN"
-    elif [[ "$ASSUME_YES" == true ]]; then
-        INSTALL_BUN=true
-    elif confirm "Install Bun?" y; then
-        INSTALL_BUN=true
-    else
-        INSTALL_BUN=false
-    fi
-
-    if [[ -n "$WANT_ZOXIDE" ]]; then
-        INSTALL_ZOXIDE="$WANT_ZOXIDE"
-    elif [[ "$ASSUME_YES" == true ]]; then
-        INSTALL_ZOXIDE=true
-    elif confirm "Install zoxide? ('z <dir>' to jump around)" y; then
-        INSTALL_ZOXIDE=true
-    else
-        INSTALL_ZOXIDE=false
-    fi
+    confirm "Install zoxide? ('z <dir>' to jump around)" y && INSTALL_ZOXIDE=true || INSTALL_ZOXIDE=false
+    confirm "Install Docker + Compose plugin?" y && INSTALL_DOCKER=true || INSTALL_DOCKER=false
+    confirm "Install Bun?" y && INSTALL_BUN=true || INSTALL_BUN=false
 
     local yn_docker yn_bun yn_zoxide yn_debloat
     yn_docker=$([[ "$INSTALL_DOCKER" == true ]] && echo yes || echo no)
@@ -300,9 +214,7 @@ gather_answers() {
     printf '  bun ....................... %s\n' "$yn_bun"
     printf '  hostname .................. %s\n\n' "${NEW_HOSTNAME:-unchanged ($current)}"
 
-    if [[ "$ASSUME_YES" != true ]]; then
-        confirm "Proceed?" y || { printf 'Nothing was changed.\n'; exit 0; }
-    fi
+    confirm "Proceed?" y || { printf 'Nothing was changed.\n'; exit 0; }
 }
 
 set_hostname() {
@@ -472,7 +384,7 @@ debloat() {
         step "De-bloat"; skip "skipped (not Ubuntu)"; return 0
     fi
     if [[ "$DO_DEBLOAT" != true ]]; then
-        step "De-bloat"; skip "skipped (--no-debloat)"; return 0
+        step "De-bloat"; skip "skipped"; return 0
     fi
 
     step "Removing snap and Ubuntu bloat"
@@ -708,7 +620,7 @@ summary() {
 }
 
 main() {
-    parse_args "$@"
+    [[ $# -eq 0 ]] || die "this script takes no arguments — it asks what to do when you run it"
     detect_distro
 
     printf '\n%s╭──────────────────────────────────────────╮%s\n' "$C_BLUE" "$C_RESET"
