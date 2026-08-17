@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🐧 linux-shell-setup
+# 🐧 vps-setup
 
 **Run this** ☕
 
