@@ -1,0 +1,2 @@
+# Claude Code agent worktrees — scratch checkouts, never part of the repo
+.claude/worktrees/
