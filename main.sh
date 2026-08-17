@@ -702,7 +702,13 @@ apt_has() {
     [[ -n "$cand" && "$cand" != "(none)" ]]
 }
 
-btop_version() { "${1:-btop}" --version 2>/dev/null | awk 'NR==1 {print $NF; exit}' || true; }
+# Tools that colour their --version output leave a reset sequence inside our line,
+# which cancels the dim styling for everything printed after it.
+strip_ansi() { sed -E 's/\x1b\[[0-9;?]*[a-zA-Z]//g; s/[[:cntrl:]]//g'; }
+
+btop_version() {
+    "${1:-btop}" --version 2>/dev/null | awk 'NR==1 {print $NF; exit}' | strip_ansi || true
+}
 
 install_btop() {
     if [[ "$INSTALL_BTOP" != true ]]; then
@@ -745,7 +751,7 @@ install_dtop() {
     fi
 
     if run "dtop (upstream installer)" dtop_install; then
-        ok "$(/root/.local/bin/dtop --version 2>/dev/null | head -n1 || echo dtop) in ~/.local/bin"
+        ok "$(/root/.local/bin/dtop --version 2>/dev/null | head -n1 | strip_ansi || echo dtop) in ~/.local/bin"
         command -v docker >/dev/null 2>&1 || note "it needs a docker daemon to show anything"
     else
         warn "dtop could not be installed — retry later from https://dtop.dev"
@@ -856,7 +862,7 @@ summary() {
     bun_v="$(/root/.bun/bin/bun --version 2>/dev/null || true)"
     btop_v="$(btop_version)"
     [[ -n "$btop_v" ]] || btop_v="$(btop_version /usr/local/bin/btop)"
-    dtop_v="$({ dtop --version 2>/dev/null || /root/.local/bin/dtop --version 2>/dev/null; } | awk 'NR==1 {print $NF; exit}' || true)"
+    dtop_v="$({ dtop --version 2>/dev/null || /root/.local/bin/dtop --version 2>/dev/null; } | awk 'NR==1 {print $NF; exit}' | strip_ansi || true)"
 
     printf '\n  %s%s%s\n' "$C_MINT" "$RULE" "$C_RESET"
     printf '  %s%s  all done%s\n' "$C_MINT" "$S_STAR" "$C_RESET"
