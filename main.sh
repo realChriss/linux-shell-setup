@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-#
-# setup-vps.sh — fresh Ubuntu/Debian VPS bootstrap. Run as root. Safe to re-run.
-# Takes no arguments; it asks what to do. See README.md.
-#
 
 set -Eeuo pipefail
 
@@ -143,7 +139,7 @@ as_root_home() {
 }
 
 detect_distro() {
-    [[ $EUID -eq 0 ]] || die "run this as root (sudo -i, then ./setup-vps.sh)"
+    [[ $EUID -eq 0 ]] || die "run this as root (sudo -i, then ./main.sh)"
     [[ -r /etc/os-release ]] || die "/etc/os-release not found — unsupported system"
 
     # shellcheck disable=SC1091
@@ -311,7 +307,6 @@ remove_snap() {
 
     # Negative pin so nothing can pull snapd back in as a dependency.
     cat > /etc/apt/preferences.d/no-snap.pref <<'EOF'
-# Installed by setup-vps.sh — keep snapd off this machine.
 Package: snapd
 Pin: release a=*
 Pin-Priority: -10
@@ -515,7 +510,6 @@ write_zshrc_block() {
 
     cat >> "$ZSHRC" <<EOF
 ${BLOCK_START}
-# Managed by setup-vps.sh — edits inside this block are overwritten on re-run.
 export PATH="\$HOME/.local/bin:\$PATH"
 
 # bun
