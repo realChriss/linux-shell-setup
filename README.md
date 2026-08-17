@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🐧 Vps Setup
+# 🐧 VPS Setup
 
 <div align="center"><h4>Chriss' personalized VPS setup 😈</h4></div>
 
