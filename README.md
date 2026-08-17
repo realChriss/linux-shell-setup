@@ -1,6 +1,6 @@
 # setup-vps.sh
 
-One-shot bootstrap for a fresh **Ubuntu or Debian** VPS. Run it as root, answer three
+One-shot bootstrap for a fresh **Ubuntu or Debian** VPS. Run it as root, answer four
 questions, walk away. Safe to re-run.
 
 ```sh
@@ -24,7 +24,7 @@ It must be `bash`, not `sh` — the script uses bash-only features.
 | System upgrade | `apt-get dist-upgrade`, non-interactive, keeps your existing config files |
 | **De-bloat** (Ubuntu only) | see below |
 | Zsh + Oh My Zsh | for root, with `git`, `docker`, `docker-compose`, `zsh-autosuggestions`, `zsh-syntax-highlighting` |
-| zoxide | upstream installer into `~/.local/bin`, wired into `.zshrc` — `z <dir>` to jump, `zi` to pick |
+| zoxide | optional; upstream installer into `~/.local/bin`, wired into `.zshrc` — `z <dir>` to jump, `zi` to pick |
 | Docker + Compose | optional; official Docker repo, `docker-ce` + `docker-compose-plugin` (`docker compose`) |
 | Bun | optional; official installer into `~/.bun` (pulls in `unzip` first) |
 | Hostname | optional; `/etc/hostname`, `/etc/hosts`, and tells cloud-init to stop resetting it |
@@ -61,8 +61,9 @@ Debian skips this whole section.
 --keep-hostname   leave the hostname untouched
 --docker | --no-docker
 --bun    | --no-bun
+--zoxide | --no-zoxide
 --no-debloat      keep snap / telemetry / Pro & MOTD ads
--y, --yes         never prompt; defaults are: keep hostname, install Docker, install Bun
+-y, --yes         never prompt; defaults are: keep hostname, install Docker, Bun and zoxide
 -h, --help
 ```
 

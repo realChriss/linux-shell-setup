@@ -29,6 +29,7 @@ NEW_HOSTNAME=""
 WANT_HOSTNAME=""
 WANT_DOCKER=""
 WANT_BUN=""
+WANT_ZOXIDE=""
 
 WARNINGS=()
 LOG=""
@@ -66,15 +67,17 @@ Options:
   --no-docker       do not install Docker
   --bun             install Bun (skip the question)
   --no-bun          do not install Bun
+  --zoxide          install zoxide (skip the question)
+  --no-zoxide       do not install zoxide
   --no-debloat      keep snap / Ubuntu telemetry / Pro & MOTD ads
   -y, --yes         never prompt; use defaults for anything not passed as a flag
-                    (defaults: keep hostname, install Docker, install Bun)
+                    (defaults: keep hostname, install Docker, Bun and zoxide)
   -h, --help        show this help
 
 Always done: system upgrade, zsh + Oh My Zsh (+ autosuggestions, syntax
-highlighting, git/docker/docker-compose plugins), zoxide, zsh as root's login
-shell, apt cleanup. On Ubuntu, snap and the telemetry/ad packages are removed
-unless --no-debloat is given.
+highlighting, git/docker/docker-compose plugins), zsh as root's login shell,
+apt cleanup. On Ubuntu, snap and the telemetry/ad packages are removed unless
+--no-debloat is given.
 EOF
 }
 
@@ -182,6 +185,8 @@ parse_args() {
             --no-docker)     WANT_DOCKER=false ;;
             --bun)           WANT_BUN=true ;;
             --no-bun)        WANT_BUN=false ;;
+            --zoxide)        WANT_ZOXIDE=true ;;
+            --no-zoxide)     WANT_ZOXIDE=false ;;
             --no-debloat)    DO_DEBLOAT=false ;;
             -y|--yes)        ASSUME_YES=true ;;
             -h|--help)       usage; exit 0 ;;
@@ -269,16 +274,28 @@ gather_answers() {
         INSTALL_BUN=false
     fi
 
-    local yn_docker yn_bun yn_debloat
+    if [[ -n "$WANT_ZOXIDE" ]]; then
+        INSTALL_ZOXIDE="$WANT_ZOXIDE"
+    elif [[ "$ASSUME_YES" == true ]]; then
+        INSTALL_ZOXIDE=true
+    elif confirm "Install zoxide? ('z <dir>' to jump around)" y; then
+        INSTALL_ZOXIDE=true
+    else
+        INSTALL_ZOXIDE=false
+    fi
+
+    local yn_docker yn_bun yn_zoxide yn_debloat
     yn_docker=$([[ "$INSTALL_DOCKER" == true ]] && echo yes || echo no)
     yn_bun=$([[ "$INSTALL_BUN" == true ]] && echo yes || echo no)
+    yn_zoxide=$([[ "$INSTALL_ZOXIDE" == true ]] && echo yes || echo no)
     yn_debloat=$([[ "$DO_DEBLOAT" == true ]] && echo yes || echo no)
     [[ "$IS_UBUNTU" == true ]] || yn_debloat="n/a (Debian)"
 
     printf '\n%sPlan%s\n' "$C_BLUE" "$C_RESET"
     printf '  system upgrade ............ yes\n'
     printf '  remove snap + bloat ....... %s\n' "$yn_debloat"
-    printf '  zsh + Oh My Zsh + zoxide .. yes (root)\n'
+    printf '  zsh + Oh My Zsh ........... yes (root)\n'
+    printf '  zoxide .................... %s\n' "$yn_zoxide"
     printf '  docker + compose .......... %s\n' "$yn_docker"
     printf '  bun ....................... %s\n' "$yn_bun"
     printf '  hostname .................. %s\n\n' "${NEW_HOSTNAME:-unchanged ($current)}"
@@ -505,6 +522,9 @@ install_omz() {
 }
 
 install_zoxide() {
+    if [[ "$INSTALL_ZOXIDE" != true ]]; then
+        step "zoxide"; skip "skipped"; return 0
+    fi
     step "Installing zoxide"
     if command -v zoxide >/dev/null 2>&1 || [[ -x /root/.local/bin/zoxide ]]; then
         skip "zoxide already installed"
@@ -590,12 +610,22 @@ export PATH="\$HOME/.local/bin:\$PATH"
 export BUN_INSTALL="\$HOME/.bun"
 [ -d "\$BUN_INSTALL/bin" ] && export PATH="\$BUN_INSTALL/bin:\$PATH"
 [ -s "\$BUN_INSTALL/_bun" ] && source "\$BUN_INSTALL/_bun"
+EOF
+
+    if [[ "$INSTALL_ZOXIDE" == true ]]; then
+        cat >> "$ZSHRC" <<EOF
 
 # zoxide — 'z <dir>' to jump around, 'zi' for the interactive picker
 command -v zoxide >/dev/null 2>&1 && eval "\$(zoxide init zsh)"
-${BLOCK_END}
 EOF
-    ok "PATH, bun and zoxide init appended to $ZSHRC"
+    fi
+
+    printf '%s\n' "$BLOCK_END" >> "$ZSHRC"
+    if [[ "$INSTALL_ZOXIDE" == true ]]; then
+        ok "PATH, bun and zoxide init appended to $ZSHRC"
+    else
+        ok "PATH and bun init appended to $ZSHRC"
+    fi
 }
 
 set_default_shell() {
