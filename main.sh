@@ -320,7 +320,7 @@ gather_answers() {
     confirm "zoxide? (z <dir> to teleport)" y && INSTALL_ZOXIDE=true || INSTALL_ZOXIDE=false
     confirm "docker + compose?" y && INSTALL_DOCKER=true || INSTALL_DOCKER=false
     confirm "bun?" y && INSTALL_BUN=true || INSTALL_BUN=false
-    confirm "btop? (the pretty system monitor)" y && INSTALL_BTOP=true || INSTALL_BTOP=false
+    confirm "btop?" y && INSTALL_BTOP=true || INSTALL_BTOP=false
     confirm "dtop? (live docker container metrics)" y && INSTALL_DTOP=true || INSTALL_DTOP=false
 
     step "the plan"
