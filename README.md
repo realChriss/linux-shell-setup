@@ -2,34 +2,41 @@
 
 # 🐧 linux-shell-setup
 
-**Fresh Ubuntu/Debian box → one command → a shell worth using.** ☕
+**Fresh Ubuntu/Debian box.** ☕
 
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 ![Debian](https://img.shields.io/badge/Debian-A81D33?style=for-the-badge&logo=debian&logoColor=white)
 ![Zsh](https://img.shields.io/badge/zsh-1A1A1A?style=for-the-badge&logo=gnubash&logoColor=white)
-![Root](https://img.shields.io/badge/run%20as-root-red?style=for-the-badge)
 
 </div>
+
+<div align="center">
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/realChriss/linux-shell-setup/main/main.sh | bash
 ```
 
-<div align="center"><sub>Personalized for <b>Chriss</b> — it asks before it touches anything. 😈</sub></div>
+</div>
+
+<div align="center"><sub>Personalized for <b>Chriss</b> 😈</sub></div>
 
 ---
 
+<div align="center">
+
 ## 📦 What you get
 
-<table>
+</div>
+
+<table align="center">
 <tr>
-<td width="50%">
+<td width="50%" align="center">
 
 ### 🐚 zsh + Oh My Zsh
 Installed and set as the default shell.
 
 </td>
-<td width="50%">
+<td width="50%" align="center">
 
 ### 🧭 zoxide
 `z <dir>` to jump, `zi` for the picker.
@@ -37,13 +44,13 @@ Installed and set as the default shell.
 </td>
 </tr>
 <tr>
-<td width="50%">
+<td width="50%" align="center">
 
 ### 🐳 Docker
 Engine + the Compose plugin.
 
 </td>
-<td width="50%">
+<td width="50%" align="center">
 
 ### 🥟 Bun
 Wired into your `.zshrc` for you.
@@ -51,13 +58,13 @@ Wired into your `.zshrc` for you.
 </td>
 </tr>
 <tr>
-<td width="50%">
+<td width="50%" align="center">
 
 ### 🔪 Debloat
-Snap, telemetry, Ubuntu Pro & MOTD ads — gone.
+Snap, telemetry, Ubuntu Pro & MOTD ads.
 
 </td>
-<td width="50%">
+<td width="50%" align="center">
 
 ### ⬆️ Fresh start
 Full system upgrade + optional hostname.
@@ -65,7 +72,3 @@ Full system upgrade + optional hostname.
 </td>
 </tr>
 </table>
-
----
-
-<div align="center"><sub>🛡️ <code>openssh-server</code> and <code>cloud-init</code> are protected — the debloat can't lock you out of your own VPS.</sub></div>
