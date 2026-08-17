@@ -320,6 +320,8 @@ gather_answers() {
     confirm "zoxide? (z <dir> to teleport)" y && INSTALL_ZOXIDE=true || INSTALL_ZOXIDE=false
     confirm "docker + compose?" y && INSTALL_DOCKER=true || INSTALL_DOCKER=false
     confirm "bun?" y && INSTALL_BUN=true || INSTALL_BUN=false
+    confirm "btop? (the pretty system monitor)" y && INSTALL_BTOP=true || INSTALL_BTOP=false
+    confirm "dtop? (live docker container metrics)" y && INSTALL_DTOP=true || INSTALL_DTOP=false
 
     step "the plan"
     printf '\n'
@@ -329,6 +331,8 @@ gather_answers() {
     plan_row "$INSTALL_ZOXIDE" "zoxide"
     plan_row "$INSTALL_DOCKER" "docker + compose"
     plan_row "$INSTALL_BUN" "bun"
+    plan_row "$INSTALL_BTOP" "btop"
+    plan_row "$INSTALL_DTOP" "dtop"
     if [[ -n "$NEW_HOSTNAME" ]]; then
         plan_row true "hostname $C_B$NEW_HOSTNAME$C_RESET"
     else
@@ -662,6 +666,92 @@ install_bun() {
     fi
 }
 
+btop_arch() {
+    case "$(dpkg --print-architecture)" in
+        amd64) printf 'x86_64-unknown-linux-musl' ;;
+        arm64) printf 'aarch64-unknown-linux-musl' ;;
+        armhf) printf 'armv7-unknown-linux-musleabi' ;;
+        i386)  printf 'i686-unknown-linux-musl' ;;
+        *)     return 1 ;;
+    esac
+}
+
+# Escape hatch for releases that do not ship btop at all (Debian 11 has it in
+# backports only): the upstream static musl build needs nothing from the system.
+btop_upstream() {
+    local arch tmp rc=0
+    arch="$(btop_arch)" || return 1
+    tmp="$(mktemp -d)"
+    {
+        curl -fsSL "https://github.com/aristocratos/btop/releases/latest/download/btop-${arch}.tar.gz" \
+            -o "$tmp/btop.tar.gz" \
+        && tar -xzf "$tmp/btop.tar.gz" -C "$tmp" \
+        && install -m 0755 "$tmp/btop/bin/btop" /usr/local/bin/btop
+    } || rc=1
+    if [[ $rc -eq 0 && -d "$tmp/btop/themes" ]]; then
+        mkdir -p /usr/local/share/btop
+        cp -r "$tmp/btop/themes" /usr/local/share/btop/ || true
+    fi
+    rm -rf "$tmp"
+    return "$rc"
+}
+
+apt_has() {
+    local cand
+    cand="$(apt-cache policy "$1" 2>/dev/null | awk '/Candidate:/{print $2}')"
+    [[ -n "$cand" && "$cand" != "(none)" ]]
+}
+
+btop_version() { "${1:-btop}" --version 2>/dev/null | awk '{print $NF}' || true; }
+
+install_btop() {
+    if [[ "$INSTALL_BTOP" != true ]]; then
+        step "btop"; skip "skipped"; return 0
+    fi
+    step "btop"
+
+    if command -v btop >/dev/null 2>&1; then
+        skip "already installed ($(btop_version))"
+        return 0
+    fi
+
+    if apt_has btop && run "btop (apt)" apt_get install btop; then
+        ok "btop $(btop_version)"
+    elif run "btop (static build from github)" btop_upstream; then
+        ok "btop $(btop_version /usr/local/bin/btop) in /usr/local/bin"
+    else
+        warn "btop could not be installed"
+    fi
+}
+
+# DTOP_NO_MODIFY_PATH keeps the installer out of .zshrc — ~/.local/bin is already
+# on PATH from the block this script writes.
+dtop_install() {
+    as_root_home env DTOP_NO_MODIFY_PATH=1 sh -c \
+        "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/amir20/dtop/releases/latest/download/dtop-installer.sh | sh" \
+        || return 1
+    [[ -x /root/.local/bin/dtop ]]
+}
+
+install_dtop() {
+    if [[ "$INSTALL_DTOP" != true ]]; then
+        step "dtop"; skip "skipped"; return 0
+    fi
+    step "dtop"
+
+    if [[ -x /root/.local/bin/dtop ]] || command -v dtop >/dev/null 2>&1; then
+        skip "already installed"
+        return 0
+    fi
+
+    if run "dtop (upstream installer)" dtop_install; then
+        ok "$(/root/.local/bin/dtop --version 2>/dev/null || echo dtop) in ~/.local/bin"
+        command -v docker >/dev/null 2>&1 || note "it needs a docker daemon to show anything"
+    else
+        warn "dtop could not be installed — retry later from https://dtop.dev"
+    fi
+}
+
 write_zshrc_block() {
     step "wiring up .zshrc"
 
@@ -686,12 +776,22 @@ command -v zoxide >/dev/null 2>&1 && eval "\$(zoxide init zsh)"
 EOF
     fi
 
-    printf '%s\n' "$BLOCK_END" >> "$ZSHRC"
-    if [[ "$INSTALL_ZOXIDE" == true ]]; then
-        ok "path, bun and zoxide hooks written"
-    else
-        ok "path and bun hooks written"
+    # oh-my-zsh's docker plugin claims `dtop` for `docker top`; this block is
+    # sourced after it, so dropping the alias here gives the binary its name back.
+    if [[ "$INSTALL_DTOP" == true ]]; then
+        cat >> "$ZSHRC" <<'EOF'
+
+# dtop — the docker plugin aliases dtop to 'docker top', we want the real thing
+unalias dtop 2>/dev/null || true
+EOF
     fi
+
+    printf '%s\n' "$BLOCK_END" >> "$ZSHRC"
+
+    local wrote="path and bun"
+    [[ "$INSTALL_ZOXIDE" == true ]] && wrote="$wrote, zoxide"
+    [[ "$INSTALL_DTOP" == true ]] && wrote="$wrote, dtop"
+    ok "$wrote hooks written"
 }
 
 set_default_shell() {
@@ -747,13 +847,16 @@ row() {
 }
 
 summary() {
-    local zsh_v zoxide_v docker_v bun_v host_now shell_now
+    local zsh_v zoxide_v docker_v bun_v btop_v dtop_v host_now shell_now
     host_now="$(hostname 2>/dev/null || cat /etc/hostname 2>/dev/null || true)"
     shell_now="$(getent passwd root 2>/dev/null | cut -d: -f7 || true)"
     zsh_v="$(zsh --version 2>/dev/null | awk '{print $2}' || true)"
     zoxide_v="$(zoxide --version 2>/dev/null || /root/.local/bin/zoxide --version 2>/dev/null || true)"
     docker_v="$(docker --version 2>/dev/null | awk '{print $3}' | tr -d ',' || true)"
     bun_v="$(/root/.bun/bin/bun --version 2>/dev/null || true)"
+    btop_v="$(btop_version)"
+    [[ -n "$btop_v" ]] || btop_v="$(btop_version /usr/local/bin/btop)"
+    dtop_v="$({ dtop --version 2>/dev/null || /root/.local/bin/dtop --version 2>/dev/null; } | awk '{print $NF}' || true)"
 
     printf '\n  %s%s%s\n' "$C_MINT" "$RULE" "$C_RESET"
     printf '  %s%s  all done%s\n' "$C_MINT" "$S_STAR" "$C_RESET"
@@ -765,6 +868,8 @@ summary() {
     row "zoxide" "${zoxide_v:-—}"
     row "docker" "${docker_v:-—}"
     row "bun" "${bun_v:-—}"
+    row "btop" "${btop_v:-—}"
+    row "dtop" "${dtop_v:-—}"
 
     if [[ ${#WARNINGS[@]} -gt 0 ]]; then
         local w
@@ -801,6 +906,8 @@ main() {
     install_zoxide
     install_docker
     install_bun
+    install_btop
+    install_dtop
     write_zshrc_block
     set_default_shell
     cleanup
