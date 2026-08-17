@@ -12,7 +12,7 @@
 <div align="center">
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/realChriss/linux-shell-setup/main/main.sh | bash
+curl -fsSL https://raw.githubusercontent.com/realChriss/vps-setup/main/main.sh | bash
 ```
 
 </div>
