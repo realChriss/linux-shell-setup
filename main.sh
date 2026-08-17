@@ -24,28 +24,132 @@ NEW_HOSTNAME=""
 
 WARNINGS=()
 LOG=""
+SPIN_PID=""
 
-if [[ -t 1 ]]; then
-    C_RESET=$'\033[0m'; C_BLUE=$'\033[1;34m'; C_GREEN=$'\033[1;32m'
-    C_YELLOW=$'\033[1;33m'; C_RED=$'\033[1;31m'; C_DIM=$'\033[2m'
+if [[ -t 1 && "${TERM:-dumb}" != "dumb" ]]; then
+    FANCY=true
+    C_RESET=$'\033[0m';        C_B=$'\033[1m';            C_DIM=$'\033[2m'
+    C_PINK=$'\033[38;5;211m';  C_MAUVE=$'\033[38;5;141m'; C_CYAN=$'\033[38;5;116m'
+    C_MINT=$'\033[38;5;114m';  C_PEACH=$'\033[38;5;216m'; C_ROSE=$'\033[38;5;210m'
+    C_GREY=$'\033[38;5;245m'
 else
-    C_RESET=""; C_BLUE=""; C_GREEN=""; C_YELLOW=""; C_RED=""; C_DIM=""
+    FANCY=false
+    C_RESET=""; C_B=""; C_DIM=""; C_PINK=""; C_MAUVE=""; C_CYAN=""
+    C_MINT=""; C_PEACH=""; C_ROSE=""; C_GREY=""
 fi
 
-step() { printf '\n%s==>%s %s%s%s\n' "$C_BLUE" "$C_RESET" "$C_BLUE" "$*" "$C_RESET"; }
-log()  { printf '    %s\n' "$*"; }
-skip() { printf '    %s- %s%s\n' "$C_DIM" "$*" "$C_RESET"; }
-ok()   { printf '    %s+%s %s\n' "$C_GREEN" "$C_RESET" "$*"; }
-warn() { printf '    %s!%s %s\n' "$C_YELLOW" "$C_RESET" "$*"; WARNINGS+=("$*"); }
-die()  { printf '\n%serror:%s %s\n' "$C_RED" "$C_RESET" "$*" >&2; exit 1; }
+if [[ "${LANG:-}${LC_ALL:-}${LC_CTYPE:-}" == *[Uu][Tt][Ff]* ]]; then
+    S_OK="✔"; S_ERR="✖"; S_WARN="▲"; S_SKIP="·"; S_NO="✗"
+    S_ARROW="❯"; S_STAR="✦"; S_PIPE="│"; S_TIP="›"
+    SPIN=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
+    RULE="────────────────────────────────────────"
+    BOX_TL="╭"; BOX_TR="╮"; BOX_BL="╰"; BOX_BR="╯"; BOX_H="─"; BOX_V="│"
+else
+    S_OK="+"; S_ERR="x"; S_WARN="!"; S_SKIP="-"; S_NO="x"
+    S_ARROW=">"; S_STAR="*"; S_PIPE="|"; S_TIP=">"
+    SPIN=('|' '/' '-' '\')
+    RULE="----------------------------------------"
+    BOX_TL="+"; BOX_TR="+"; BOX_BL="+"; BOX_BR="+"; BOX_H="-"; BOX_V="|"
+fi
+
+journal() {
+    [[ -n "$LOG" ]] || return 0
+    printf '%s\n' "$*" | sed -E 's/\x1b\[[0-9;?]*[a-zA-Z]//g' >> "$LOG" 2>/dev/null || true
+}
+
+step() {
+    printf '\n  %s%s%s %s%s%s\n' "$C_MAUVE" "$S_ARROW" "$C_RESET" "$C_B" "$*" "$C_RESET"
+    journal "== $*"
+}
+ok()   { printf '    %s%s%s %s\n' "$C_MINT" "$S_OK" "$C_RESET" "$*"; journal "  ok   $*"; }
+skip() { printf '    %s%s %s%s\n' "$C_DIM" "$S_SKIP" "$*" "$C_RESET"; journal "  skip $*"; }
+warn() { printf '    %s%s%s %s\n' "$C_PEACH" "$S_WARN" "$C_RESET" "$*"; journal "  warn $*"; WARNINGS+=("$*"); }
+bad()  { printf '    %s%s%s %s\n' "$C_ROSE" "$S_ERR" "$C_RESET" "$*"; journal "  FAIL $*"; }
+note() { printf '    %s%s%s\n' "$C_DIM" "$*" "$C_RESET"; journal "  .    $*"; }
+
+die() {
+    spin_stop
+    printf '\n  %s%s  %s%s\n' "$C_ROSE" "$S_ERR" "$*" "$C_RESET" >&2
+    [[ -n "$LOG" ]] && printf '  %slog: %s%s\n\n' "$C_DIM" "$LOG" "$C_RESET" >&2
+    exit 1
+}
 
 on_error() {
     local rc=$1 line=$2
-    printf '\n%sxx aborted%s (exit %s, line %s)\n' "$C_RED" "$C_RESET" "$rc" "$line" >&2
-    [[ -n "$LOG" ]] && printf 'Full log: %s\n' "$LOG" >&2
+    spin_stop
+    printf '\n  %s%s  stopped at line %s (exit %s)%s\n' "$C_ROSE" "$S_ERR" "$line" "$rc" "$C_RESET" >&2
+    [[ -n "$LOG" ]] && printf '  %slog: %s%s\n\n' "$C_DIM" "$LOG" "$C_RESET" >&2
     exit "$rc"
 }
 trap 'on_error $? $LINENO' ERR
+trap 'spin_stop; [[ "$FANCY" == true ]] && printf "\033[?25h" || true' EXIT
+
+spin_start() {
+    [[ "$FANCY" == true ]] || { printf '    %s%s %s…%s\n' "$C_DIM" "$S_SKIP" "$*" "$C_RESET"; return 0; }
+    local msg="$1"
+    printf '\033[?25l'
+    (
+        local i=0
+        while :; do
+            printf '\r    %s%s%s %s%s%s' "$C_CYAN" "${SPIN[i++ % ${#SPIN[@]}]}" "$C_RESET" "$C_GREY" "$msg" "$C_RESET"
+            sleep 0.08
+        done
+    ) &
+    SPIN_PID=$!
+}
+
+spin_stop() {
+    [[ -n "$SPIN_PID" ]] || return 0
+    kill "$SPIN_PID" 2>/dev/null || true
+    wait "$SPIN_PID" 2>/dev/null || true
+    SPIN_PID=""
+    printf '\r\033[2K\033[?25h'
+}
+
+fmt_dur() {
+    local s=$1
+    if (( s < 60 )); then printf '%ds' "$s"; else printf '%dm%02ds' $((s / 60)) $((s % 60)); fi
+}
+
+# Everything noisy goes through here: output lands in the log, the shell only
+# gets a tick, a cross, and on failure the lines that actually explain it.
+run() {
+    local msg="$1"; shift
+    local t0=$SECONDS rc=0 out
+    out="$(mktemp "${TMPDIR:-/tmp}/vps-setup.XXXXXX")"
+
+    spin_start "$msg"
+    "$@" >"$out" 2>&1 </dev/null || rc=$?
+    spin_stop
+
+    if [[ -n "$LOG" ]]; then
+        { printf '\n----- %s (exit %s) -----\n' "$msg" "$rc"; cat "$out"; } >> "$LOG" 2>/dev/null || true
+    fi
+
+    if [[ $rc -eq 0 ]]; then
+        printf '    %s%s%s %-44s %s%s%s\n' \
+            "$C_MINT" "$S_OK" "$C_RESET" "$msg" "$C_DIM" "$(fmt_dur $((SECONDS - t0)))" "$C_RESET"
+        journal "  ok   $msg"
+    else
+        bad "$msg  (exit $rc)"
+        show_why "$out"
+    fi
+
+    rm -f "$out"
+    return "$rc"
+}
+
+show_why() {
+    local line
+    while IFS= read -r line; do
+        printf '      %s%s%s %s%s%s\n' "$C_ROSE" "$S_PIPE" "$C_RESET" "$C_DIM" "$line" "$C_RESET"
+        journal "       | $line"
+    done < <(
+        grep -vE '^[[:space:]]*$' "$1" \
+        | grep -viE '^(get:|hit:|ign:|reading |building |selecting |preparing |unpacking |setting up |processing triggers|extracting |\(reading database)' \
+        | tail -n 8
+    )
+}
 
 # Reads from /dev/tty so `curl … | bash` still gets answers from the keyboard.
 ask() {
@@ -61,14 +165,15 @@ ask() {
 }
 
 confirm() {
-    local prompt="$1" default="${2:-y}" hint="[Y/n]" answer=""
-    [[ "${default,,}" == "n" ]] && hint="[y/N]"
+    local prompt="$1" default="${2:-y}" hint="Y/n" answer=""
+    [[ "${default,,}" == "n" ]] && hint="y/N"
     while true; do
-        answer="$(ask "$prompt $hint " "$default")"
+        answer="$(ask "$(printf '    %s%s%s %s %s[%s] %s' \
+            "$C_PINK" "$S_TIP" "$C_RESET" "$prompt" "$C_DIM" "$hint" "$C_RESET")" "$default")"
         case "${answer,,}" in
             y|yes) return 0 ;;
             n|no)  return 1 ;;
-            *)     printf '    please answer y or n\n' >&2 ;;
+            *)     printf '      %sy or n, cutie%s\n' "$C_DIM" "$C_RESET" >&2 ;;
         esac
     done
 }
@@ -94,7 +199,7 @@ sysd() {
 }
 
 apt_get() {
-    DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 \
+    DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 NEEDRESTART_MODE=a \
         apt-get -y -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef "$@"
 }
 
@@ -119,6 +224,15 @@ protected_hits() {
     printf '%s' "$hits"
 }
 
+short_list() {
+    local -a items=("$@")
+    if [[ ${#items[@]} -le 3 ]]; then
+        printf '%s' "${items[*]}"
+    else
+        printf '%s +%d more' "${items[*]:0:3}" $(( ${#items[@]} - 3 ))
+    fi
+}
+
 purge_if_installed() {
     local pkgs=() p
     for p in "$@"; do
@@ -127,11 +241,8 @@ purge_if_installed() {
     if [[ ${#pkgs[@]} -eq 0 ]]; then
         return 0
     fi
-    if apt_get purge "${pkgs[@]}"; then
-        ok "purged: ${pkgs[*]}"
-    else
-        warn "could not purge: ${pkgs[*]}"
-    fi
+    run "purge $(short_list "${pkgs[@]}")" apt_get purge "${pkgs[@]}" \
+        || warn "could not purge: ${pkgs[*]}"
 }
 
 as_root_home() {
@@ -167,60 +278,84 @@ detect_distro() {
     [[ -n "$DOCKER_CODENAME" ]] || warn "no release codename found; Docker repo setup may fail"
 }
 
+banner() {
+    local title="  ${S_STAR}  v p s   s e t u p  ${S_STAR}  " bar
+    printf -v bar '%*s' "${#title}" ''
+    bar="${bar// /$BOX_H}"
+
+    printf '\n  %s%s%s%s%s\n' "$C_PINK" "$BOX_TL" "$bar" "$BOX_TR" "$C_RESET"
+    printf '  %s%s%s%s%s%s%s%s%s\n' \
+        "$C_PINK" "$BOX_V" "$C_RESET" "$C_B" "$C_MAUVE" "$title" "$C_RESET" \
+        "$C_PINK" "${BOX_V}${C_RESET}"
+    printf '  %s%s%s%s%s\n' "$C_PINK" "$BOX_BL" "$bar" "$BOX_BR" "$C_RESET"
+    printf '   %s%s %s%s\n' "$C_DIM" "$S_STAR" "$DISTRO_NAME" "$C_RESET"
+}
+
 gather_answers() {
     local current answer
+
     current="$(hostname 2>/dev/null || cat /etc/hostname 2>/dev/null || echo localhost)"
 
-    printf 'Detected: %s\n' "$DISTRO_NAME"
+    step "a few questions"
+    printf '\n'
 
     while true; do
-        answer="$(ask "Hostname [$current] (enter to keep): " "$current")"
+        answer="$(ask "$(printf '    %s%s%s hostname %s[%s] %s' \
+            "$C_PINK" "$S_TIP" "$C_RESET" "$C_DIM" "$current" "$C_RESET")" "$current")"
         if [[ "$answer" == "$current" ]]; then
             NEW_HOSTNAME=""; break
         elif valid_hostname "$answer"; then
             NEW_HOSTNAME="$answer"; break
         else
-            printf '    invalid hostname — letters, digits, hyphens and dots only\n' >&2
+            printf '      %sletters, digits, hyphens and dots only%s\n' "$C_DIM" "$C_RESET" >&2
         fi
     done
 
     if [[ "$IS_UBUNTU" == true ]]; then
-        confirm "Remove snap, telemetry and Ubuntu Pro/MOTD ads?" y && DO_DEBLOAT=true || DO_DEBLOAT=false
+        confirm "kill snap, telemetry and pro ads?" y && DO_DEBLOAT=true || DO_DEBLOAT=false
     else
         DO_DEBLOAT=false
     fi
 
-    confirm "Install zoxide? ('z <dir>' to jump around)" y && INSTALL_ZOXIDE=true || INSTALL_ZOXIDE=false
-    confirm "Install Docker + Compose plugin?" y && INSTALL_DOCKER=true || INSTALL_DOCKER=false
-    confirm "Install Bun?" y && INSTALL_BUN=true || INSTALL_BUN=false
+    confirm "zoxide? (z <dir> to teleport)" y && INSTALL_ZOXIDE=true || INSTALL_ZOXIDE=false
+    confirm "docker + compose?" y && INSTALL_DOCKER=true || INSTALL_DOCKER=false
+    confirm "bun?" y && INSTALL_BUN=true || INSTALL_BUN=false
 
-    local yn_docker yn_bun yn_zoxide yn_debloat
-    yn_docker=$([[ "$INSTALL_DOCKER" == true ]] && echo yes || echo no)
-    yn_bun=$([[ "$INSTALL_BUN" == true ]] && echo yes || echo no)
-    yn_zoxide=$([[ "$INSTALL_ZOXIDE" == true ]] && echo yes || echo no)
-    yn_debloat=$([[ "$DO_DEBLOAT" == true ]] && echo yes || echo no)
-    [[ "$IS_UBUNTU" == true ]] || yn_debloat="n/a (Debian)"
+    step "the plan"
+    printf '\n'
+    plan_row true "full system upgrade"
+    plan_row "$DO_DEBLOAT" "snap, telemetry & pro ads out"
+    plan_row true "zsh + oh my zsh + plugins"
+    plan_row "$INSTALL_ZOXIDE" "zoxide"
+    plan_row "$INSTALL_DOCKER" "docker + compose"
+    plan_row "$INSTALL_BUN" "bun"
+    if [[ -n "$NEW_HOSTNAME" ]]; then
+        plan_row true "hostname $C_B$NEW_HOSTNAME$C_RESET"
+    else
+        plan_row true "hostname stays $current"
+    fi
+    printf '\n'
 
-    printf '\n%sPlan%s\n' "$C_BLUE" "$C_RESET"
-    printf '  system upgrade ............ yes\n'
-    printf '  remove snap + bloat ....... %s\n' "$yn_debloat"
-    printf '  zsh + Oh My Zsh ........... yes (root)\n'
-    printf '  zoxide .................... %s\n' "$yn_zoxide"
-    printf '  docker + compose .......... %s\n' "$yn_docker"
-    printf '  bun ....................... %s\n' "$yn_bun"
-    printf '  hostname .................. %s\n\n' "${NEW_HOSTNAME:-unchanged ($current)}"
+    confirm "let's go?" y || { printf '\n    %suntouched. bye ♡%s\n\n' "$C_DIM" "$C_RESET"; exit 0; }
+}
 
-    confirm "Proceed?" y || { printf 'Nothing was changed.\n'; exit 0; }
+plan_row() {
+    if [[ "$1" == true ]]; then
+        printf '    %s%s%s %s\n' "$C_MINT" "$S_OK" "$C_RESET" "$2"
+    else
+        printf '    %s%s %s%s\n' "$C_DIM" "$S_NO" "$2" "$C_RESET"
+    fi
 }
 
 set_hostname() {
     if [[ -z "$NEW_HOSTNAME" ]]; then
-        step "Hostname"; skip "left unchanged"; return 0
+        step "hostname"; skip "left alone"; return 0
     fi
-    step "Setting hostname to $NEW_HOSTNAME"
+    step "hostname"
 
     if have_systemd && command -v hostnamectl >/dev/null 2>&1; then
-        hostnamectl set-hostname "$NEW_HOSTNAME" || warn "hostnamectl failed; writing /etc/hostname anyway"
+        hostnamectl set-hostname "$NEW_HOSTNAME" >/dev/null 2>&1 \
+            || warn "hostnamectl failed; writing /etc/hostname anyway"
     fi
     printf '%s\n' "$NEW_HOSTNAME" > /etc/hostname
     hostname "$NEW_HOSTNAME" 2>/dev/null || true
@@ -233,26 +368,24 @@ set_hostname() {
     else
         printf '127.0.1.1\t%s\n' "$names" >> /etc/hosts
     fi
-    ok "/etc/hostname and /etc/hosts updated"
+    ok "now called $C_B$NEW_HOSTNAME$C_RESET"
 
     # cloud-init re-applies the provider's hostname on every boot unless told not to.
     if [[ -d /etc/cloud ]]; then
         mkdir -p /etc/cloud/cloud.cfg.d
         printf 'preserve_hostname: true\n' > /etc/cloud/cloud.cfg.d/99-preserve-hostname.cfg
-        ok "cloud-init told to preserve the hostname across reboots"
+        ok "cloud-init told to keep it across reboots"
     fi
 }
 
 update_system() {
-    step "Updating the system"
-    apt_get update
-    log "running dist-upgrade (this is the slow part)…"
-    apt_get dist-upgrade
-    ok "system upgraded"
-
-    log "installing base packages…"
-    apt_get install ca-certificates curl gnupg git zsh unzip tar
-    ok "curl, git, zsh, unzip and friends installed"
+    step "system"
+    run "refreshing package lists" apt_get update \
+        || die "apt could not reach the archives — check DNS and networking"
+    run "upgrading everything (slow part)" apt_get dist-upgrade \
+        || die "dist-upgrade failed"
+    run "base packages (curl, git, zsh, unzip…)" apt_get install ca-certificates curl gnupg git zsh unzip tar \
+        || die "could not install the base packages"
 }
 
 # Marks the core set manual so removing the Ubuntu metapackages later cannot make
@@ -272,29 +405,33 @@ protect_core_packages() {
     done
     if [[ ${#present[@]} -gt 0 ]]; then
         apt-mark manual "${present[@]}" >/dev/null 2>&1 || true
-        ok "core packages pinned as manually installed (${#present[@]} of them)"
+        ok "${#present[@]} core packages pinned so nothing eats them"
     fi
 }
 
-remove_snap() {
+snap_purge_all() {
     local pass snaps=() name
-
-    if command -v snap >/dev/null 2>&1; then
-        log "removing installed snaps…"
-        for pass in 1 2 3; do
-            mapfile -t snaps < <(snap list 2>/dev/null | awk 'NR>1 {print $1}' || true)
-            [[ ${#snaps[@]} -gt 0 ]] || break
-            # apps first, then bases/core/snapd — snapd refuses to drop a base still in use
-            for name in "${snaps[@]}"; do
-                case "$name" in core*|snapd|bare) continue ;; esac
-                timeout 180 snap remove --purge "$name" >/dev/null 2>&1 || true
-            done
-            for name in "${snaps[@]}"; do
-                case "$name" in
-                    core*|snapd|bare) timeout 180 snap remove --purge "$name" >/dev/null 2>&1 || true ;;
-                esac
-            done
+    command -v snap >/dev/null 2>&1 || return 0
+    for pass in 1 2 3; do
+        mapfile -t snaps < <(snap list 2>/dev/null | awk 'NR>1 {print $1}' || true)
+        [[ ${#snaps[@]} -gt 0 ]] || break
+        # apps first, then bases/core/snapd — snapd refuses to drop a base still in use
+        for name in "${snaps[@]}"; do
+            case "$name" in core*|snapd|bare) continue ;; esac
+            timeout 180 snap remove --purge "$name" || true
         done
+        for name in "${snaps[@]}"; do
+            case "$name" in
+                core*|snapd|bare) timeout 180 snap remove --purge "$name" || true ;;
+            esac
+        done
+    done
+    return 0
+}
+
+remove_snap() {
+    if command -v snap >/dev/null 2>&1; then
+        run "yeeting every installed snap" snap_purge_all || warn "some snaps refused to go"
     fi
 
     sysd disable --now snapd.service
@@ -313,7 +450,8 @@ Pin-Priority: -10
 EOF
 
     rm -rf /snap /var/snap /var/lib/snapd /var/cache/snapd /root/snap
-    ok "snap removed, held and pinned (lxd and other snap-backed packages will now refuse to install — intended)"
+    ok "snap purged, held and pinned at -10"
+    note "lxd and other snap-backed packages will refuse to install now"
 }
 
 remove_telemetry() {
@@ -324,7 +462,7 @@ remove_telemetry() {
     sysd disable --now apport.service
     sysd disable --now whoopsie.service
     purge_if_installed landscape-common landscape-client
-    ok "crash reporting, popcon and Landscape removed"
+    ok "crash reporting, popcon and landscape gone"
 }
 
 remove_motd_ads() {
@@ -341,7 +479,7 @@ remove_motd_ads() {
             chmod -x "/etc/update-motd.d/$f" || true
         fi
     done
-    ok "MOTD news, livepatch/ESM announcements and upgrade nags disabled"
+    ok "motd news, livepatch and upgrade nags silenced"
 }
 
 remove_ubuntu_pro() {
@@ -352,7 +490,7 @@ remove_ubuntu_pro() {
         if pkg_installed "$p"; then present+=("$p"); fi
     done
     if [[ ${#present[@]} -eq 0 ]]; then
-        skip "Ubuntu Pro client not installed"
+        skip "ubuntu pro client not installed"
         return 0
     fi
 
@@ -365,24 +503,24 @@ remove_ubuntu_pro() {
     removals="$(would_remove purge "${present[@]}")"
     bad="$(protected_hits "$removals")"
     if [[ -n "$bad" ]]; then
-        warn "skipped Ubuntu Pro removal — it would also remove:$bad"
+        warn "left ubuntu pro alone — removing it would also take:$bad"
         return 0
     fi
 
     purge_if_installed "${present[@]}"
     rm -f /etc/apt/apt.conf.d/20apt-esm-hook.conf
-    ok "Ubuntu Pro / ESM advertising removed (the ubuntu-minimal metapackage goes with it — harmless)"
+    ok "ubuntu pro / esm ads removed"
 }
 
 debloat() {
     if [[ "$IS_UBUNTU" != true ]]; then
-        step "De-bloat"; skip "skipped (not Ubuntu)"; return 0
+        step "de-bloat"; skip "not ubuntu, nothing to do"; return 0
     fi
     if [[ "$DO_DEBLOAT" != true ]]; then
-        step "De-bloat"; skip "skipped"; return 0
+        step "de-bloat"; skip "skipped"; return 0
     fi
 
-    step "Removing snap and Ubuntu bloat"
+    step "taking out the trash"
     protect_core_packages
     remove_snap
     remove_telemetry
@@ -390,28 +528,37 @@ debloat() {
     remove_ubuntu_pro
 }
 
+omz_install() {
+    local tmp rc=0
+    tmp="$(mktemp)"
+    curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh -o "$tmp" \
+        || { rm -f "$tmp"; return 1; }
+    env HOME=/root USER=root LOGNAME=root SHELL=/bin/bash RUNZSH=no CHSH=no KEEP_ZSHRC=no \
+        sh "$tmp" --unattended || rc=$?
+    rm -f "$tmp"
+    return "$rc"
+}
+
 install_omz() {
-    step "Installing Oh My Zsh"
+    step "zsh dressing room"
 
     if [[ -d "$OMZ_DIR" ]]; then
-        skip "Oh My Zsh already present"
+        skip "oh my zsh already here"
     else
-        env HOME=/root USER=root LOGNAME=root SHELL=/bin/bash RUNZSH=no CHSH=no KEEP_ZSHRC=no \
-            sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
-        ok "Oh My Zsh installed"
+        run "oh my zsh" omz_install || die "oh my zsh install failed"
     fi
-    [[ -f "$ZSHRC" ]] || die "Oh My Zsh did not create $ZSHRC"
+    [[ -f "$ZSHRC" ]] || die "oh my zsh did not create $ZSHRC"
 
     local name url
     mkdir -p "$OMZ_CUSTOM/plugins"
     for name in zsh-autosuggestions zsh-syntax-highlighting; do
         url="https://github.com/zsh-users/${name}.git"
         if [[ -d "$OMZ_CUSTOM/plugins/$name/.git" ]]; then
-            git -C "$OMZ_CUSTOM/plugins/$name" pull --ff-only --quiet || warn "could not update $name"
-            skip "$name already installed"
+            run "updating $name" git -C "$OMZ_CUSTOM/plugins/$name" pull --ff-only \
+                || warn "could not update $name"
         else
-            git clone --depth=1 --quiet "$url" "$OMZ_CUSTOM/plugins/$name"
-            ok "$name installed"
+            run "plugin $name" git clone --depth=1 "$url" "$OMZ_CUSTOM/plugins/$name" \
+                || warn "could not install $name"
         fi
     done
 
@@ -422,88 +569,101 @@ install_omz() {
         printf 'plugins=(%s)\n' "$OMZ_PLUGINS" >> "$ZSHRC"
     fi
     if grep -qE "^plugins=\(${OMZ_PLUGINS// /[[:space:]]}\)$" "$ZSHRC"; then
-        ok "plugins: $OMZ_PLUGINS"
+        ok "plugins wired up"
     else
-        warn "could not rewrite the plugins=() line — set it by hand in $ZSHRC to: plugins=($OMZ_PLUGINS)"
+        warn "could not rewrite plugins=() — set it by hand in $ZSHRC to: plugins=($OMZ_PLUGINS)"
     fi
+}
+
+zoxide_upstream() {
+    as_root_home sh -c 'curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh' || return 1
+    [[ -x /root/.local/bin/zoxide ]]
 }
 
 install_zoxide() {
     if [[ "$INSTALL_ZOXIDE" != true ]]; then
         step "zoxide"; skip "skipped"; return 0
     fi
-    step "Installing zoxide"
+    step "zoxide"
     if command -v zoxide >/dev/null 2>&1 || [[ -x /root/.local/bin/zoxide ]]; then
-        skip "zoxide already installed"
+        skip "already installed"
         return 0
     fi
 
     # The upstream installer keeps us on a modern release; distro packages lag badly.
-    if as_root_home sh -c 'curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh' >/dev/null 2>&1 \
-       && [[ -x /root/.local/bin/zoxide ]]; then
-        ok "zoxide $(/root/.local/bin/zoxide --version 2>/dev/null | awk '{print $2}') installed to /root/.local/bin"
-    elif apt_get install zoxide; then
-        ok "zoxide installed from apt"
+    if run "zoxide (upstream installer)" zoxide_upstream; then
+        ok "$(/root/.local/bin/zoxide --version 2>/dev/null || echo zoxide) in ~/.local/bin"
+    elif run "zoxide (apt fallback)" apt_get install zoxide; then
+        ok "installed from apt"
     else
-        warn "zoxide installation failed"
+        warn "zoxide could not be installed"
     fi
+}
+
+docker_repo() {
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL "https://download.docker.com/linux/${DOCKER_DISTRO}/gpg" -o /etc/apt/keyrings/docker.asc || return 1
+    chmod a+r /etc/apt/keyrings/docker.asc
+    printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/%s %s stable\n' \
+        "$(dpkg --print-architecture)" "$DOCKER_DISTRO" "$DOCKER_CODENAME" \
+        > /etc/apt/sources.list.d/docker.list
 }
 
 install_docker() {
     if [[ "$INSTALL_DOCKER" != true ]]; then
-        step "Docker"; skip "skipped"; return 0
+        step "docker"; skip "skipped"; return 0
     fi
-    step "Installing Docker and the Compose plugin"
+    step "docker"
 
     if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-        skip "Docker and Compose already installed"
+        skip "docker and compose already here"
     else
         purge_if_installed docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc
 
-        install -m 0755 -d /etc/apt/keyrings
-        curl -fsSL "https://download.docker.com/linux/${DOCKER_DISTRO}/gpg" -o /etc/apt/keyrings/docker.asc
-        chmod a+r /etc/apt/keyrings/docker.asc
-
-        printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/%s %s stable\n' \
-            "$(dpkg --print-architecture)" "$DOCKER_DISTRO" "$DOCKER_CODENAME" \
-            > /etc/apt/sources.list.d/docker.list
-
-        apt_get update
-        apt_get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+        run "adding docker's apt repo" docker_repo || die "could not fetch docker's signing key"
+        run "refreshing package lists" apt_get update || die "apt update failed after adding the docker repo"
+        run "docker-ce, containerd, buildx, compose" \
+            apt_get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin \
+            || die "docker packages failed to install"
     fi
 
     sysd enable --now containerd.service
     sysd enable --now docker.service
 
     if docker --version >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-        ok "$(docker --version)"
-        ok "$(docker compose version)"
+        ok "$(docker --version | sed 's/,.*//')"
+        ok "compose $(docker compose version --short)"
     else
-        warn "Docker installed but the version check failed — check 'systemctl status docker'"
+        warn "docker installed but not answering — check 'systemctl status docker'"
     fi
+}
+
+bun_install() {
+    as_root_home bash -c 'curl -fsSL https://bun.sh/install | bash' || return 1
+    [[ -x /root/.bun/bin/bun ]]
 }
 
 install_bun() {
     if [[ "$INSTALL_BUN" != true ]]; then
-        step "Bun"; skip "skipped"; return 0
+        step "bun"; skip "skipped"; return 0
     fi
-    step "Installing Bun"
+    step "bun"
 
     if [[ -x /root/.bun/bin/bun ]]; then
-        skip "Bun already installed ($(/root/.bun/bin/bun --version 2>/dev/null))"
+        skip "already installed ($(/root/.bun/bin/bun --version 2>/dev/null))"
         return 0
     fi
 
-    pkg_installed unzip || apt_get install unzip
-    if as_root_home bash -c 'curl -fsSL https://bun.sh/install | bash' >/dev/null 2>&1 && [[ -x /root/.bun/bin/bun ]]; then
+    pkg_installed unzip || run "unzip (bun needs it)" apt_get install unzip || true
+    if run "bun" bun_install; then
         ok "bun $(/root/.bun/bin/bun --version)"
     else
-        warn "Bun installation failed — retry later with: curl -fsSL https://bun.sh/install | bash"
+        warn "bun failed — retry later with: curl -fsSL https://bun.sh/install | bash"
     fi
 }
 
 write_zshrc_block() {
-    step "Wiring up .zshrc"
+    step "wiring up .zshrc"
 
     # Drop the previous block first so re-runs never stack duplicates.
     sed -i "\|^${BLOCK_START}$|,\|^${BLOCK_END}$|d" "$ZSHRC"
@@ -528,14 +688,14 @@ EOF
 
     printf '%s\n' "$BLOCK_END" >> "$ZSHRC"
     if [[ "$INSTALL_ZOXIDE" == true ]]; then
-        ok "PATH, bun and zoxide init appended to $ZSHRC"
+        ok "path, bun and zoxide hooks written"
     else
-        ok "PATH and bun init appended to $ZSHRC"
+        ok "path and bun hooks written"
     fi
 }
 
 set_default_shell() {
-    step "Making zsh root's login shell"
+    step "login shell"
     local zsh_bin
     zsh_bin="$(command -v zsh || true)"
     if [[ -z "$zsh_bin" ]]; then
@@ -546,70 +706,81 @@ set_default_shell() {
     grep -qxF "$zsh_bin" /etc/shells || printf '%s\n' "$zsh_bin" >> /etc/shells
 
     if chsh -s "$zsh_bin" root >/dev/null 2>&1 || usermod -s "$zsh_bin" root >/dev/null 2>&1; then
-        ok "root's shell is now $(getent passwd root | cut -d: -f7)"
+        ok "root now lands in $(getent passwd root 2>/dev/null | cut -d: -f7 || true)"
     else
         warn "could not change root's shell — run: chsh -s $zsh_bin root"
     fi
 }
 
-cleanup() {
-    step "Cleaning up"
-
-    local removals bad
-    removals="$(would_remove autoremove --purge)"
-    if [[ -z "$removals" ]]; then
-        skip "nothing to autoremove"
-    else
-        bad="$(protected_hits "$removals")"
-        if [[ -n "$bad" ]]; then
-            warn "skipped autoremove — it wanted to remove:$bad (review with 'apt autoremove' yourself)"
-        else
-            apt_get autoremove --purge || warn "autoremove failed"
-            ok "removed orphaned packages"
-        fi
-    fi
-
+apt_tidy() {
     apt_get autoclean || true
     apt-get clean
     rm -f /root/install.sh /root/bun.zip
     if have_systemd; then
-        journalctl --vacuum-time=3d >/dev/null 2>&1 || true
+        journalctl --vacuum-time=3d || true
     fi
-    ok "apt caches cleared"
+    return 0
+}
+
+cleanup() {
+    step "tidying up"
+
+    local removals bad
+    removals="$(would_remove autoremove --purge)"
+    if [[ -z "$removals" ]]; then
+        skip "nothing orphaned"
+    else
+        bad="$(protected_hits "$removals")"
+        if [[ -n "$bad" ]]; then
+            warn "skipped autoremove — it wanted to take:$bad (check 'apt autoremove' yourself)"
+        else
+            run "removing orphaned packages" apt_get autoremove --purge || warn "autoremove failed"
+        fi
+    fi
+
+    run "clearing apt caches and old journals" apt_tidy || true
+}
+
+row() {
+    printf '    %s%-9s%s %s\n' "$C_GREY" "$1" "$C_RESET" "$2"
+    journal "  $1 $2"
 }
 
 summary() {
-    local shell_now zsh_v zoxide_v docker_v compose_v bun_v
-    shell_now="$(getent passwd root | cut -d: -f7)"
-    zsh_v="$(zsh --version 2>/dev/null | head -n1 || true)"
+    local zsh_v zoxide_v docker_v bun_v host_now shell_now
+    host_now="$(hostname 2>/dev/null || cat /etc/hostname 2>/dev/null || true)"
+    shell_now="$(getent passwd root 2>/dev/null | cut -d: -f7 || true)"
+    zsh_v="$(zsh --version 2>/dev/null | awk '{print $2}' || true)"
     zoxide_v="$(zoxide --version 2>/dev/null || /root/.local/bin/zoxide --version 2>/dev/null || true)"
-    docker_v="$(docker --version 2>/dev/null || true)"
-    compose_v="$(docker compose version --short 2>/dev/null || true)"
+    docker_v="$(docker --version 2>/dev/null | awk '{print $3}' | tr -d ',' || true)"
     bun_v="$(/root/.bun/bin/bun --version 2>/dev/null || true)"
 
-    printf '\n%s────────────────────────────────────────────%s\n' "$C_GREEN" "$C_RESET"
-    printf '%s Done%s — %s\n' "$C_GREEN" "$C_RESET" "$DISTRO_NAME"
-    printf '%s────────────────────────────────────────────%s\n' "$C_GREEN" "$C_RESET"
-    printf '  hostname : %s\n' "$(hostname 2>/dev/null || cat /etc/hostname)"
-    printf '  shell    : %s\n' "$shell_now"
-    printf '  zsh      : %s\n' "${zsh_v:-not installed}"
-    printf '  zoxide   : %s\n' "${zoxide_v:-not installed}"
-    printf '  docker   : %s\n' "${docker_v:-not installed}"
-    printf '  compose  : %s\n' "${compose_v:-not installed}"
-    printf '  bun      : %s\n' "${bun_v:-not installed}"
+    printf '\n  %s%s%s\n' "$C_MINT" "$RULE" "$C_RESET"
+    printf '  %s%s  all done%s\n' "$C_MINT" "$S_STAR" "$C_RESET"
+    printf '  %s%s%s\n\n' "$C_MINT" "$RULE" "$C_RESET"
+
+    row "host" "${host_now:-—}"
+    row "shell" "${shell_now:-—}"
+    row "zsh" "${zsh_v:-—}"
+    row "zoxide" "${zoxide_v:-—}"
+    row "docker" "${docker_v:-—}"
+    row "bun" "${bun_v:-—}"
 
     if [[ ${#WARNINGS[@]} -gt 0 ]]; then
-        printf '\n%sWarnings (%d):%s\n' "$C_YELLOW" "${#WARNINGS[@]}" "$C_RESET"
-        printf '  - %s\n' "${WARNINGS[@]}"
+        local w
+        printf '\n  %s%s %d thing(s) want a look%s\n' "$C_PEACH" "$S_WARN" "${#WARNINGS[@]}" "$C_RESET"
+        for w in "${WARNINGS[@]}"; do
+            printf '    %s%s %s%s\n' "$C_DIM" "$S_SKIP" "$w" "$C_RESET"
+        done
     fi
 
-    printf '\nStart using zsh now:  %sexec zsh%s   (or log out and back in)\n' "$C_BLUE" "$C_RESET"
+    printf '\n  %s%s%s  %sexec zsh%s to jump in\n' "$C_PINK" "$S_STAR" "$C_RESET" "$C_B" "$C_RESET"
     if [[ -f /var/run/reboot-required ]]; then
-        printf '%sA reboot is required%s to finish the upgrade.\n' "$C_YELLOW" "$C_RESET"
+        printf '  %s%s%s  reboot required to finish the upgrade\n' "$C_PEACH" "$S_WARN" "$C_RESET"
     else
-        printf 'A reboot is recommended after a full system upgrade.\n'
+        printf '  %s%s%s  a reboot is a good idea after a full upgrade\n' "$C_DIM" "$S_SKIP" "$C_RESET"
     fi
-    [[ -n "$LOG" ]] && printf '%sLog: %s%s\n' "$C_DIM" "$LOG" "$C_RESET"
+    printf '  %s%s  log: %s%s\n\n' "$C_DIM" "$S_SKIP" "$LOG" "$C_RESET"
     return 0
 }
 
@@ -617,15 +788,11 @@ main() {
     [[ $# -eq 0 ]] || die "this script takes no arguments — it asks what to do when you run it"
     detect_distro
 
-    printf '\n%s╭──────────────────────────────────────────╮%s\n' "$C_BLUE" "$C_RESET"
-    printf '%s│  fresh VPS setup                         │%s\n' "$C_BLUE" "$C_RESET"
-    printf '%s╰──────────────────────────────────────────╯%s\n' "$C_BLUE" "$C_RESET"
-
+    banner
     gather_answers
 
-    # Logging starts only now, so the prompts above are not swallowed by tee's buffer.
     LOG="/var/log/vps-setup-$(date +%F-%H%M%S).log"
-    exec > >(tee -a "$LOG") 2>&1
+    journal "vps-setup $(date -Is) on $DISTRO_NAME"
 
     set_hostname
     update_system
