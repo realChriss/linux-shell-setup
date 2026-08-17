@@ -1,8 +1,10 @@
 <div align="center">
 
-# 🐧 vps-setup
+# 🐧 Vps Setup
 
-**Run this** ☕
+<div align="center"><sub><b>Chriss'</b> personalized VPS setup 😈</sub></div>
+
+<br>
 
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 ![Debian](https://img.shields.io/badge/Debian-A81D33?style=for-the-badge&logo=debian&logoColor=white)
@@ -16,8 +18,6 @@ curl -fsSL https://raw.githubusercontent.com/realChriss/vps-setup/main/main.sh |
 ```
 
 </div>
-
-<div align="center"><sub>Personalized for <b>Chriss</b> 😈</sub></div>
 
 <div align="center">
 
