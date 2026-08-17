@@ -5,10 +5,17 @@ questions, walk away. Safe to re-run.
 
 ```sh
 # on the fresh box, as root
-curl -fsSLO https://<your-host>/setup-vps.sh
-chmod +x setup-vps.sh
-./setup-vps.sh
+curl -fsSL https://raw.githubusercontent.com/realChriss/linux-shell-setup/main/setup-vps.sh | bash
 ```
+
+The prompts still work when piped — the script reads your answers from `/dev/tty`, not
+from stdin. Pass flags after `-s --`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/realChriss/linux-shell-setup/main/setup-vps.sh | bash -s -- --yes --hostname=web-01
+```
+
+It must be `bash`, not `sh` — the script uses bash-only features.
 
 ## What it does
 
@@ -62,7 +69,7 @@ Debian skips this whole section.
 Any question you answer with a flag isn't asked. Fully unattended, e.g. from cloud-init:
 
 ```sh
-./setup-vps.sh --yes --hostname=web-01 --docker --no-bun
+curl -fsSL https://raw.githubusercontent.com/realChriss/linux-shell-setup/main/setup-vps.sh | bash -s -- --yes --hostname=web-01 --docker --no-bun
 ```
 
 ## After it finishes
